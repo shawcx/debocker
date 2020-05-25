@@ -50,6 +50,10 @@ releases = collections.OrderedDict([
 
 
 def build(release, arch, packages, clean):
+    if 0 != os.getuid():
+        print('[!] debootstrap requires root')
+        return
+
     distro,version,isOld = releases[release]
     if isOld:
         distro = distro.lower()
@@ -75,13 +79,16 @@ def build(release, arch, packages, clean):
         dest
         ])
     print('[+] debootstrap:', cmd)
-    os.system(cmd)
+    status = os.system(cmd)
+    if status != 0:
+        print('[!] Failed to debootstrap:', status)
+        return
 
     print('[+] cleanup')
     archives = os.path.join(dest, 'var', 'cache', 'apt', 'archives')
     os.system('rm -rf ' + archives + '/*.deb')
 
-    print('[+] docker')
+    print('[+] creating docker:', dest)
     if clean:
         os.system('docker image rm ' + dest)
     os.system('cd ' + dest + '&& tar -c . | docker import - ' + dest)
