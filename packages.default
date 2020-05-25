@@ -1,6 +1,13 @@
 build-essential
+autoconf
+gawk
 flex
 bison
-autoconf
-libncurses5-dev
+
+unzip
+wget
 openssh-client
+
+libncurses5-dev
+zlib1g-dev
+libbz2-dev

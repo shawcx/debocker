@@ -74,7 +74,7 @@ def build(release, arch, packages, clean):
         'debootstrap',
         keyring,
         '--arch=' + arch,
-        '--include=' + ','.join(packages),
+        '--include=' + ','.join(p for p in packages if p and p[0] != '#'),
         release,
         dest
         ])
