@@ -1,0 +1,6 @@
+build-essential
+flex
+bison
+autoconf
+libncurses5-dev
+openssh-client
