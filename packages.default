@@ -3,6 +3,8 @@ autoconf
 gawk
 flex
 bison
+gettext
+pkg-config
 
 unzip
 wget
