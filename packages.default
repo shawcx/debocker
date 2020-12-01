@@ -13,3 +13,4 @@ openssh-client
 libncurses5-dev
 zlib1g-dev
 libbz2-dev
+libelf1
