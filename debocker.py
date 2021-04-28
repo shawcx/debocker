@@ -4,6 +4,7 @@ import sys
 import os
 import argparse
 import collections
+import urllib.request
 
     # name        distro     version  old
 releases = collections.OrderedDict([
@@ -49,7 +50,7 @@ releases = collections.OrderedDict([
     ])
 
 
-def build(release, arch, packages, clean):
+def build(release, arch, packages, clean, letsencrypt):
     if 0 != os.getuid():
         print('[!] debootstrap requires root')
         return
@@ -78,11 +79,31 @@ def build(release, arch, packages, clean):
         release,
         dest
         ])
+
     print('[+] debootstrap:', cmd)
     status = os.system(cmd)
     if status != 0:
         print('[!] Failed to debootstrap:', status)
         return
+
+    if letsencrypt:
+        print('[+] lets encrypt')
+        req  = urllib.request.Request('https://letsencrypt.org/certs/isrgrootx1.pem')
+        try:
+            resp = urllib.request.urlopen(req)
+        except Exception as e:
+            print('[!]', e)
+            return
+
+        if resp.getcode() != 200:
+            print('[!] Response code:', resp.getcode())
+            return
+
+        cert = resp.read(resp.length)
+        cert_path = os.path.join(dest, 'usr', 'share', 'ca-certificates', 'isrgrootx1.crt')
+
+        with open(cert_path, 'wb') as fp:
+            fp.write(cert)
 
     print('[+] cleanup')
     archives = os.path.join(dest, 'var', 'cache', 'apt', 'archives')
@@ -108,6 +129,11 @@ def main():
     argparser.add_argument('--packages', '-p',
         metavar='<file>', default='packages.default',
         help='list of packages to include'
+        )
+
+    argparser.add_argument('--no-letsencrypt', '-e',
+        action='store_false', dest='letsencrypt',
+        help='disable Let\'s Encrypt update'
         )
 
     argparser.add_argument('--clean', '-c',
