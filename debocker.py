@@ -95,7 +95,7 @@ def build(release, arch, packages, clean, letsencrypt):
     packages = open(packages, 'r').readlines()
     packages = [p.strip() for p in packages]
 
-    dest = release + '-' + arch
+    dest = f'{release}-{arch}'
 
     if clean:
     	print('[+] removing', dest)
@@ -137,12 +137,12 @@ def build(release, arch, packages, clean, letsencrypt):
 
     print('[+] cleanup')
     archives = os.path.join(dest, 'var', 'cache', 'apt', 'archives')
-    os.system('rm -rf ' + archives + '/*.deb')
+    os.system(f'rm -rf {archives}/*.deb')
 
     print('[+] creating docker:', dest)
     if clean:
         os.system('docker image rm ' + dest)
-    os.system('cd ' + dest + '&& tar -c . | docker import - ' + dest)
+    os.system(f'cd {dest} && tar -c . | docker import - {dest}')
 
 
 def main():
@@ -180,7 +180,7 @@ def main():
     if args.release not in releases:
         for release,values in releases.items():
             distro,version,isOld = values
-            print('%-8s - %s %s' % (release, distro, version))
+            print(f'{release:8} - {distro} {version}')
         return
 
     build(**dict(args._get_kwargs()))
