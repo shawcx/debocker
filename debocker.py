@@ -98,8 +98,8 @@ def build(release, arch, packages, clean, letsencrypt):
     dest = f'{release}-{arch}'
 
     if clean:
-    	print('[+] removing', dest)
-    	os.system('rm -rf ' + dest)
+        print('[+] removing', dest)
+        os.system(f'rm -rf {dest}')
 
     cmd = ' '.join([
         'debootstrap',
