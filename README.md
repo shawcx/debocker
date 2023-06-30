@@ -13,4 +13,4 @@ Build docker images of old Ubuntu and Debian releases
 
 Add packages to packages.default or specify an alternat file with --package. Empty lines and lines starting with '#' are ignored.
 
-The default architecture is i386, specify an alternate architecture with --arch.
+Defaults to the system architecture, specify an alternate architecture with --arch.
