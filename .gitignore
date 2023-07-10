@@ -1,2 +1,7 @@
 /*-i386
 /*-amd64
+
+/build
+/dist
+/deb_dist
+/*.egg-info

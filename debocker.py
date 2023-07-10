@@ -80,7 +80,7 @@ releases = collections.OrderedDict([
     ])
 
 
-def build(release, arch, packages, clean, letsencrypt):
+def build(release, arch, packages, clean, letsencrypt, verbose):
     if 0 != os.getuid():
         print('[!] debootstrap requires root')
         return
@@ -94,8 +94,14 @@ def build(release, arch, packages, clean, letsencrypt):
 
     packages = open(packages, 'r').readlines()
     packages = [p.strip() for p in packages]
+    packages = [p for p in packages if p and p[0] not in ['#',';']]
 
-    dest = f'{release}-{arch}'
+    dest = release
+    if arch:
+        dest += '-' + arch
+        alt_arch = f'--arch={arch}'
+    else:
+        alt_arch = ''
 
     if clean:
         print('[+] removing', dest)
@@ -104,13 +110,22 @@ def build(release, arch, packages, clean, letsencrypt):
     cmd = ' '.join([
         'debootstrap',
         keyring,
-        '--arch=' + arch,
-        '--include=' + ','.join(p for p in packages if p and p[0] != '#'),
+        alt_arch,
+        '--include=' + ','.join(packages),
         release,
         dest
         ])
 
-    print('[+] debootstrap:', cmd)
+    print('[+] debootstrap')
+    if verbose:
+        print('[*]', cmd)
+        print('[*] Packages:')
+        for package in packages:
+            print('   ', package)
+        print()
+    else:
+        cmd += ' > /dev/null'
+
     status = os.system(cmd)
     if status != 0:
         print('[!] Failed to debootstrap:', status)
@@ -152,7 +167,7 @@ def main():
         )
 
     argparser.add_argument('--arch', '-a',
-        metavar='<arch>', default='i386',
+        metavar='<arch>',
         help='processor architecture to build'
         )
 
@@ -169,6 +184,11 @@ def main():
     argparser.add_argument('--clean', '-c',
         action='store_true',
         help='clear cache and docker'
+        )
+
+    argparser.add_argument('--verbose', '-v',
+        action='store_true',
+        help='print extra informatino'
         )
 
     argparser.add_argument('release',
