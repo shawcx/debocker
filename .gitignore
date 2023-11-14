@@ -1,6 +1,5 @@
-/*-i386
-/*-amd64
-
+/debocker-*
+/packages.*
 /build
 /dist
 /deb_dist

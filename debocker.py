@@ -29,8 +29,8 @@ import argparse
 import collections
 import urllib.request
 
-    # name        distro     version  old
 releases = collections.OrderedDict([
+    # name        distro     version  isOld
 	# Ubuntu
     ('hardy'    , ('Ubuntu',  '8.04', True)),
     ('intrepid' , ('Ubuntu',  '8.10', True)),
@@ -62,8 +62,10 @@ releases = collections.OrderedDict([
     ('hirsute'  , ('Ubuntu', '21.04', True)),
     ('impish'   , ('Ubuntu', '21.10', True)),
     ('jammy'    , ('Ubuntu', '22.04', False)),
-    ('kinetic'  , ('Ubuntu', '22.10', False)),
+    ('kinetic'  , ('Ubuntu', '22.10', True)),
     ('lunar'    , ('Ubuntu', '23.04', False)),
+    ('mantic'   , ('Ubuntu', '23.10', False)),
+    ('noble'    , ('Ubuntu', '24.04', False)),
     # Debian
     ('potato'   , ('Debian',   '2.2', True)),
     ('woody'    , ('Debian',   '3.0', True)),
@@ -80,56 +82,73 @@ releases = collections.OrderedDict([
     ])
 
 
-def build(release, arch, packages, clean, letsencrypt, verbose):
+def build(release, mirror, arch, packages, letsencrypt, quiet):
     if 0 != os.getuid():
         print('[!] debootstrap requires root')
         return
 
     distro,version,isOld = releases[release]
+    distro = distro.lower()
     if isOld:
-        distro = distro.lower()
         keyring = f'--keyring=/usr/share/keyrings/{distro}-archive-removed-keys.gpg'
     else:
         keyring = ''
 
-    packages = open(packages, 'r').readlines()
-    packages = [p.strip() for p in packages]
-    packages = [p for p in packages if p and p[0] not in ['#',';']]
+    try:
+        packages = packages.format(release=release)
+        packages = open(packages, 'r').readlines()
+        packages = [p.strip() for p in packages]
+        packages = [p for p in packages if p and p[0] not in ['#',';']]
+    except FileNotFoundError:
+        print(f'[-] no packages defined for {release}')
+        return
 
-    dest = release
+    if letsencrypt:
+        if 'ca-certificates' not in packages:
+            packages.append('ca-certificates')
+
+    if distro == 'ubuntu':
+        components = ['main','restricted','universe','multiverse']
+    elif distro == 'debian':
+        components = ['main','contrib','non-free']
+    components = f'--components={",".join(components)}'
+
+    dest = f'debocker-{release}'
+    tag  = f'debocker-{distro}:{release}'
     if arch:
-        dest += '-' + arch
+        debootstrap = 'qemu-debootstrap'
         alt_arch = f'--arch={arch}'
+        dest += f'-{arch}'
+        tag  += f'-{arch}'
     else:
+        debootstrap = 'debootstrap'
         alt_arch = ''
 
-    if clean:
-        print('[+] removing', dest)
-        os.system(f'rm -rf {dest}')
+    if not os.path.exists(dest):
+        cmd = ' '.join([
+            debootstrap,
+            alt_arch,
+            components,
+            '--include=' + ','.join(packages),
+            keyring,
+            release,
+            dest,
+            mirror
+            ])
 
-    cmd = ' '.join([
-        'debootstrap',
-        keyring,
-        alt_arch,
-        '--include=' + ','.join(packages),
-        release,
-        dest
-        ])
+        print('[+]', cmd)
+        if not quiet:
+            print('[+] Packages:')
+            for package in packages:
+                print('   ', package)
+            print()
+        else:
+            cmd += ' > /dev/null'
 
-    print('[+] debootstrap')
-    if verbose:
-        print('[*]', cmd)
-        print('[*] Packages:')
-        for package in packages:
-            print('   ', package)
-        print()
-    else:
-        cmd += ' > /dev/null'
-
-    status = os.system(cmd)
-    if status != 0:
-        print('[!] Failed to debootstrap:', status)
-        return
+        status = os.system(cmd)
+        if status != 0:
+            print('[!] Failed to debootstrap:', status)
+            return
 
     if letsencrypt:
         print('[+] lets encrypt')
@@ -150,14 +169,8 @@ def build(release, arch, packages, clean, letsencrypt, verbose):
         with open(cert_path, 'wb') as fp:
             fp.write(cert)
 
-    print('[+] cleanup')
-    archives = os.path.join(dest, 'var', 'cache', 'apt', 'archives')
-    os.system(f'rm -rf {archives}/*.deb')
-
     print('[+] creating docker:', dest)
-    if clean:
-        os.system('docker image rm ' + dest)
-    os.system(f'cd {dest} && tar -c . | docker import - {dest}')
+    os.system(f'cd {dest} && tar -c --exclude ./var/cache/apt/archives . | docker import - {tag}')
 
 
 def main():
@@ -172,7 +185,7 @@ def main():
         )
 
     argparser.add_argument('--packages', '-p',
-        metavar='<file>', default='packages.default',
+        metavar='<file>', default='packages.{release}',
         help='list of packages to include'
         )
 
@@ -181,17 +194,17 @@ def main():
         help='disable Let\'s Encrypt update'
         )
 
-    argparser.add_argument('--clean', '-c',
+    argparser.add_argument('--quiet', '-q',
         action='store_true',
-        help='clear cache and docker'
-        )
-
-    argparser.add_argument('--verbose', '-v',
-        action='store_true',
-        help='print extra informatino'
+        help='less verbose output'
         )
 
     argparser.add_argument('release',
+        help='which release to build (use ? to list)'
+        )
+
+    argparser.add_argument('mirror',
+        nargs='?', default='',
         help='which release to build (use ? to list)'
         )
 
