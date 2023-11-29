@@ -113,16 +113,23 @@ def build(release, mirror, arch, packages, letsencrypt, quiet):
         components = ['main','contrib','non-free']
     components = f'--components={",".join(components)}'
 
-    dest = f'debocker-{release}'
-    tag  = f'debocker-{distro}:{release}'
+    name = f'debocker-{release}'
+    tag  = f'debocker:{release}'
     if arch:
         debootstrap = 'qemu-debootstrap'
         alt_arch = f'--arch={arch}'
-        dest += f'-{arch}'
+        name += f'-{arch}'
         tag  += f'-{arch}'
     else:
         debootstrap = 'debootstrap'
         alt_arch = ''
+
+    fullpath = os.path.abspath(os.path.dirname(__file__))
+    intree = os.getcwd() == fullpath
+    if intree:
+        dest = os.path.join(fullpath, 'envs', name)
+    else:
+        dest = name
 
     if not os.path.exists(dest):
         cmd = ' '.join([
@@ -140,14 +147,14 @@ def build(release, mirror, arch, packages, letsencrypt, quiet):
         if not quiet:
             print('[+] Packages:')
             for package in packages:
-                print('   ', package)
+                print(f' -- {package}')
             print()
         else:
             cmd += ' > /dev/null'
 
         status = os.system(cmd)
         if status != 0:
-            print('[!] Failed to debootstrap:', status)
+            print(f'[!] Failed to debootstrap: {status}')
             return
 
     if letsencrypt:
@@ -156,11 +163,11 @@ def build(release, mirror, arch, packages, letsencrypt, quiet):
         try:
             resp = urllib.request.urlopen(req)
         except Exception as e:
-            print('[!]', e)
+            print(f'[!] {e}')
             return
 
         if resp.getcode() != 200:
-            print('[!] Response code:', resp.getcode())
+            print(f'[!] Response code: {resp.getcode()}')
             return
 
         cert = resp.read(resp.length)
@@ -169,8 +176,8 @@ def build(release, mirror, arch, packages, letsencrypt, quiet):
         with open(cert_path, 'wb') as fp:
             fp.write(cert)
 
-    print('[+] creating docker:', dest)
-    os.system(f'cd {dest} && tar -c --exclude ./var/cache/apt/archives . | docker import - {tag}')
+    print(f'[+] creating docker: {name}')
+    os.system(f"cd {dest} && tar -c --exclude './var/cache/apt/archives/*.deb' . | docker import - {tag}")
 
 
 def main():
