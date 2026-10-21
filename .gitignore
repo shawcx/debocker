@@ -4,3 +4,5 @@
 /dist
 /deb_dist
 /*.egg-info
+/envs
+__pycache__/

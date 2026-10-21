@@ -27,6 +27,8 @@ import sys
 import os
 import argparse
 import collections
+import importlib.resources
+import re
 import urllib.request
 
 releases = collections.OrderedDict([
@@ -82,6 +84,47 @@ releases = collections.OrderedDict([
     ])
 
 
+def apply_packages(packages, lines):
+    # '#' and ';' start comments, '-name' removes a package added earlier
+    for line in lines:
+        name = re.split('[#;]', line, 1)[0].strip()
+        if not name:
+            continue
+        if name[0] == '-':
+            name = name[1:].strip()
+            if name in packages:
+                packages.remove(name)
+        elif name not in packages:
+            packages.append(name)
+    return packages
+
+
+def load_packages(release, overlay, quiet):
+    # base list: ./packages.default, else the copy shipped in this package
+    if os.path.exists('packages.default'):
+        source = os.path.abspath('packages.default')
+        with open(source, 'r') as fp:
+            packages = apply_packages([], fp)
+    else:
+        source = importlib.resources.files(__package__).joinpath('packages.default')
+        packages = apply_packages([], source.read_text().splitlines())
+    if not quiet:
+        print(f'[+] packages: {source}')
+
+    # release list extends the base; only an explicit --packages must exist
+    if overlay:
+        overlay = overlay.format(release=release)
+    elif os.path.exists(f'packages.{release}'):
+        overlay = f'packages.{release}'
+    if overlay:
+        with open(overlay, 'r') as fp:
+            apply_packages(packages, fp)
+        if not quiet:
+            print(f'[+] packages: {os.path.abspath(overlay)}')
+
+    return packages
+
+
 def build(release, mirror, arch, packages, letsencrypt, quiet):
     if 0 != os.getuid():
         print('[!] debootstrap requires root')
@@ -95,12 +138,9 @@ def build(release, mirror, arch, packages, letsencrypt, quiet):
         keyring = ''
 
     try:
-        packages = packages.format(release=release)
-        packages = open(packages, 'r').readlines()
-        packages = [p.strip() for p in packages]
-        packages = [p for p in packages if p and p[0] not in ['#',';']]
-    except FileNotFoundError:
-        print(f'[-] no packages defined for {release}')
+        packages = load_packages(release, packages, quiet)
+    except FileNotFoundError as e:
+        print(f'[-] {e.strerror}: {e.filename}')
         return
 
     if letsencrypt:
@@ -124,7 +164,7 @@ def build(release, mirror, arch, packages, letsencrypt, quiet):
         debootstrap = 'debootstrap'
         alt_arch = ''
 
-    fullpath = os.path.abspath(os.path.dirname(__file__))
+    fullpath = os.path.dirname(os.path.abspath(os.path.dirname(__file__)))
     intree = os.getcwd() == fullpath
     if intree:
         dest = os.path.join(fullpath, 'envs', name)
@@ -182,6 +222,7 @@ def build(release, mirror, arch, packages, letsencrypt, quiet):
 
 def main():
     argparser = argparse.ArgumentParser(
+        prog='debocker',
         description='Build docker images of old Ubuntu and Debian releases',
         epilog='hello'
         )
@@ -192,8 +233,9 @@ def main():
         )
 
     argparser.add_argument('--packages', '-p',
-        metavar='<file>', default='packages.{release}',
-        help='list of packages to include'
+        metavar='<file>',
+        help='packages to add to (or remove from with -name) packages.default'
+             ' (default: packages.{release} if present)'
         )
 
     argparser.add_argument('--no-letsencrypt', '-e',

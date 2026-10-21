@@ -14,7 +14,8 @@ setuptools.setup(
     description      = 'Create Debian/Ubuntu Docker images',
     long_description = open('README.md').read(),
     url              = 'https://github.com/shawcx/debocker',
-    py_modules   = ['debocker'],
+    packages     = ['debocker'],
+    package_data = {'debocker': ['packages.default']},
     entry_points = {
         'console_scripts': [
             'debocker    = debocker:main',
