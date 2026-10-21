@@ -136,16 +136,24 @@ def make_rootfs(tmp_path, line):
 @pytest.fixture
 def fake_update(monkeypatch):
     # record chroot commands and the policy-rc.d seen while they run, and
-    # pretend mounting /proc failed so nothing is mounted
-    seen = {'cmds': [], 'policy': []}
+    # pretend mounting failed so nothing is mounted
+    seen = {'cmds': [], 'policy': [], 'update_output': 'Hit http://mirror Release\n'}
 
-    def chroot(dest, cmd, quiet):
+    def record(dest, cmd):
         seen['cmds'].append(cmd)
         policy = os.path.join(dest, 'usr', 'sbin', 'policy-rc.d')
         seen['policy'].append(open(policy).read() if os.path.exists(policy) else None)
+
+    def chroot(dest, cmd, quiet):
+        record(dest, cmd)
         return 0
 
+    def chroot_output(dest, cmd):
+        record(dest, cmd)
+        return 0, seen['update_output']
+
     monkeypatch.setattr(debocker, 'chroot', chroot)
+    monkeypatch.setattr(debocker, 'chroot_output', chroot_output)
     monkeypatch.setattr(debocker.subprocess, 'run',
         lambda *args, **kw: subprocess.CompletedProcess(args, 1))
     return seen
@@ -207,12 +215,59 @@ def test_update_release_keeps_existing_policy(tmp_path, monkeypatch, fake_update
 def test_update_release_stops_on_failure(tmp_path, monkeypatch, fake_update):
     make_rootfs(tmp_path, 'deb http://deb.debian.org/debian trixie main')
     monkeypatch.setattr(debocker, 'suite_exists', lambda mirror, suite: False)
-    monkeypatch.setattr(debocker, 'chroot',
-        lambda dest, cmd, quiet: fake_update['cmds'].append(cmd) or 100)
+    monkeypatch.setattr(debocker, 'chroot_output',
+        lambda dest, cmd: fake_update['cmds'].append(cmd) or (100, 'E: failed\n'))
 
     assert not debocker.update_release(str(tmp_path), 'trixie', 'debian', False, True)
     assert fake_update['cmds'] == [['apt-get', 'update']]
     assert not (tmp_path / 'usr' / 'sbin' / 'policy-rc.d').exists()
+
+
+@pytest.mark.parametrize('output', [
+    'W: GPG error: http://archive.debian.org jessie Release: The following signatures were invalid: KEYEXPIRED 1587841717\n',
+    "E: The repository 'http://archive.debian.org/debian buster Release' is no longer signed.\n",
+    'E: Release file for http://archive.debian.org/debian-security/dists/buster/updates/InRelease is expired\n',
+    ])
+def test_update_release_allows_unauthenticated(tmp_path, monkeypatch, fake_update, output):
+    make_rootfs(tmp_path, 'deb http://archive.debian.org/debian jessie main')
+    monkeypatch.setattr(debocker, 'suite_exists', lambda mirror, suite: False)
+    fake_update['update_output'] = output
+
+    assert debocker.update_release(str(tmp_path), 'jessie', 'debian', True, True)
+    conf = tmp_path / 'etc' / 'apt' / 'apt.conf.d' / '99debocker-unauthenticated'
+    assert conf.read_text() == debocker.unauthenticated_conf
+    assert 'APT::Get::AllowUnauthenticated "true";' in conf.read_text()
+    assert [c[1] for c in fake_update['cmds']] == ['update', 'update', '-y', 'clean']
+
+
+def test_update_release_authenticated(tmp_path, monkeypatch, fake_update):
+    make_rootfs(tmp_path, 'deb http://deb.debian.org/debian trixie main')
+    monkeypatch.setattr(debocker, 'suite_exists', lambda mirror, suite: False)
+
+    assert debocker.update_release(str(tmp_path), 'trixie', 'debian', False, True)
+    assert not (tmp_path / 'etc' / 'apt' / 'apt.conf.d').exists()
+    assert [c[1] for c in fake_update['cmds']] == ['update', '-y', 'clean']
+
+
+def test_update_release_mounts(tmp_path, monkeypatch, fake_update):
+    make_rootfs(tmp_path, 'deb http://deb.debian.org/debian trixie main')
+    monkeypatch.setattr(debocker, 'suite_exists', lambda mirror, suite: False)
+    calls = []
+
+    def run(cmd, *args, **kw):
+        calls.append(cmd)
+        # proc mounts, devpts fails
+        return subprocess.CompletedProcess(cmd, 1 if 'devpts' in cmd else 0)
+
+    monkeypatch.setattr(debocker.subprocess, 'run', run)
+    assert debocker.update_release(str(tmp_path), 'trixie', 'debian', False, True)
+    proc,pts = str(tmp_path / 'proc'), str(tmp_path / 'dev' / 'pts')
+    assert calls == [
+        ['mount', '-t', 'proc', 'proc', proc],
+        ['mount', '-t', 'devpts', 'devpts', pts],
+        ['umount', proc],
+        ]
+    assert os.path.isdir(pts)
 
 
 # foreign architectures

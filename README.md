@@ -26,6 +26,8 @@ End-of-life releases are fetched from old-releases.ubuntu.com or archive.debian.
 
 The image's apt sources get the release's `-updates` and security suites where they exist, and the image is upgraded to them, so it has each package's final version. Disable this with `--no-updates`.
 
+Archived Debian releases are signed with keys that have since expired, so apt in those images can't authenticate packages. When debocker detects this, it adds `/etc/apt/apt.conf.d/99debocker-unauthenticated` to the image so apt still installs packages. Delete that file to restore the checks.
+
 A failed build is left in `debocker-<release>.partial` for inspection and redone on the next run. A finished `debocker-<release>` directory is reused, so delete it to rebuild from scratch.
 
 By default the Let's Encrypt root certificates (ISRG Root X1, X2, YR and YE) are added to the image's CA store, and the expired DST Root CA X3 is disabled, so old releases can verify current certificates. Disable this with `--no-letsencrypt`. Releases with very old OpenSSL may still be unable to connect to servers that require newer TLS.

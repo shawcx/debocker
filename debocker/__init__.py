@@ -103,6 +103,15 @@ eol_mirrors = {
     'debian' : 'http://archive.debian.org/debian',
     }
 
+# written to the image when apt can't authenticate its archive
+unauthenticated_conf = '''\
+// Added by debocker: this release's archive signing keys have expired, so
+// apt can't authenticate its packages. Delete this file to restore checks.
+Acquire::AllowInsecureRepositories "true";
+Acquire::Check-Valid-Until "false";
+APT::Get::AllowUnauthenticated "true";
+'''
+
 # rootfs paths kept out of the image
 image_excludes = [
     './var/cache/apt/archives/*.deb',
@@ -229,16 +238,24 @@ def install_certs(dest):
     return True
 
 
+# a clean environment so the host's locale and paths don't leak in
+chroot_env = {
+    'PATH'             : '/usr/sbin:/usr/bin:/sbin:/bin',
+    'HOME'             : '/root',
+    'LC_ALL'           : 'C',
+    'DEBIAN_FRONTEND'  : 'noninteractive',
+    }
+
+
 def chroot(dest, cmd, quiet):
-    # a clean environment so the host's locale and paths don't leak in
-    env = {
-        'PATH'             : '/usr/sbin:/usr/bin:/sbin:/bin',
-        'HOME'             : '/root',
-        'LC_ALL'           : 'C',
-        'DEBIAN_FRONTEND'  : 'noninteractive',
-        }
-    return subprocess.run(['chroot', dest] + cmd, env=env,
+    return subprocess.run(['chroot', dest] + cmd, env=chroot_env,
         stdout=subprocess.DEVNULL if quiet else None).returncode
+
+
+def chroot_output(dest, cmd):
+    result = subprocess.run(['chroot', dest] + cmd, env=chroot_env,
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors='replace')
+    return result.returncode,result.stdout
 
 
 def suite_exists(mirror, suite):
@@ -291,12 +308,17 @@ def update_release(dest, release, distro, eol, quiet):
         with open(policy, 'w') as fp:
             fp.write('#!/bin/sh\nexit 101\n')
         os.chmod(policy, 0o755)
-    proc = os.path.join(dest, 'proc')
-    mounted = 0 == subprocess.run(['mount', '-t', 'proc', 'proc', proc]).returncode
+    mounted = []
+    for fstype,point in (('proc', 'proc'), ('devpts', 'dev/pts')):
+        point = os.path.join(dest, point)
+        os.makedirs(point, exist_ok=True)
+        if 0 == subprocess.run(['mount', '-t', fstype, fstype, point]).returncode:
+            mounted.append(point)
 
     try:
+        if not apt_update(dest, quiet):
+            return False
         for cmd in (
-            ['apt-get', 'update'],
             ['apt-get', '-y',
                 '-o', 'Dpkg::Options::=--force-confdef',
                 '-o', 'Dpkg::Options::=--force-confold',
@@ -308,10 +330,32 @@ def update_release(dest, release, distro, eol, quiet):
                 print(f'[!] {shlex.join(cmd)} failed: {status}')
                 return False
     finally:
-        if mounted:
-            subprocess.run(['umount', proc])
+        for point in reversed(mounted):
+            subprocess.run(['umount', point])
         if created:
             os.remove(policy)
+    return True
+
+
+def apt_update(dest, quiet):
+    # archived releases are signed with keys that have since expired, so apt
+    # in the image can't authenticate them; when that happens, allow
+    # unauthenticated packages in the image (for this build and later use)
+    # and update again
+    status,output = chroot_output(dest, ['apt-get', 'update'])
+    if not quiet:
+        print(output, end='')
+    signals = ('GPG error', 'is not signed', 'is no longer signed', 'is expired')
+    if any(s in output for s in signals):
+        conf_path = os.path.join(dest, 'etc', 'apt', 'apt.conf.d', '99debocker-unauthenticated')
+        print('[-] apt can\'t authenticate this archive, allowing unauthenticated packages')
+        os.makedirs(os.path.dirname(conf_path), exist_ok=True)
+        with open(conf_path, 'w') as fp:
+            fp.write(unauthenticated_conf)
+        status = chroot(dest, ['apt-get', 'update'], quiet)
+    if status != 0:
+        print(f'[!] apt-get update failed: {status}')
+        return False
     return True
 
 

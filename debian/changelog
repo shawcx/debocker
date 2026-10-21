@@ -12,6 +12,8 @@ debocker (0.6) unstable; urgency=medium
   * Add the -updates and security suites and upgrade to them (--no-updates
     to skip), build in a .partial directory so failed builds aren't reused,
     and check the qemu binfmt handler before foreign-architecture builds.
+  * Allow unauthenticated packages in images whose archive keys have expired,
+    and mount /dev/pts for the upgrade.
   * Leave apt's package lists and the host's resolv.conf and hostname out
     of the image.
   * Add tests, run them during the package build, add a release table
