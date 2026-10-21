@@ -38,7 +38,11 @@ The base package list is `packages.default` in the current directory, or the one
 
 `packages.<release>` in the current directory (e.g. `packages.focal`) extends the base list. Specify a different file with `--packages`; `{release}` in the name is replaced with the release.
 
-One package per line. Empty lines are ignored, and `#` or `;` start a comment. A line like `-vim` removes a package listed earlier, so `-vim` in `packages.focal` drops `vim` from `packages.default`.
+One package per line. Empty lines are ignored, and `#` or `;` start a comment.
+
+`a | b` installs the first of `a` and `b` that the release has, so a package renamed between releases can be listed once, e.g. `libelf1t64 | libelf1 | libelfg0`. Packages are checked against the release's index before anything is downloaded, and a package with no match stops the build.
+
+A line like `-vim` removes every entry naming `vim`, so `-vim` in `packages.focal` drops `vim` from `packages.default`.
 
 Defaults to the system architecture, specify an alternate architecture with --arch.
 
@@ -46,3 +50,4 @@ Defaults to the system architecture, specify an alternate architecture with --ar
 
     make test             # unit tests (pytest)
     make check-releases   # check the release table against the live archives
+    tools/check_releases.py --packages   # also check packages.default resolves everywhere

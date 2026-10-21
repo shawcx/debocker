@@ -1,3 +1,7 @@
+# One package per line. 'a | b' installs the first of a and b the release
+# has, so names that changed between releases still work. '-name' in a
+# packages.<release> file removes a package listed here.
+
 build-essential
 autoconf
 gawk
@@ -9,11 +13,11 @@ pkg-config
 unzip
 wget
 curl
-openssh-client
+openssh-client | ssh
 
-libncurses5-dev
+libncurses-dev | libncurses5-dev
 zlib1g-dev
 libbz2-dev
-libelf1
+libelf1t64 | libelf1 | libelfg0
 
 ca-certificates

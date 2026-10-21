@@ -28,6 +28,10 @@ __version__ = '0.6'
 import sys
 import os
 import re
+import errno
+import bz2
+import gzip
+import lzma
 import shlex
 import shutil
 import argparse
@@ -36,9 +40,8 @@ import urllib.request
 import importlib.resources
 
 # which /usr/share/keyrings/<distro>-archive-<keys>.gpg verifies the release
-KEYRING  = 'keyring'
-REMOVED  = 'removed-keys'
-UNSIGNED = None # signed by a key no keyring ships, skip the check
+KEYRING = 'keyring'
+REMOVED = 'removed-keys'
 
 releases = {
     # name        distro     version  keys      eol
@@ -81,7 +84,6 @@ releases = {
     'questing' : ('Ubuntu', '25.10', KEYRING, False),
     'resolute' : ('Ubuntu', '26.04', KEYRING, False),
     # Debian
-    'potato'   : ('Debian',   '2.2', UNSIGNED, True),
     'woody'    : ('Debian',   '3.0', REMOVED,  True),
     'sarge'    : ('Debian',   '3.1', REMOVED,  True),
     'etch'     : ('Debian',   '4.0', REMOVED,  True),
@@ -96,8 +98,19 @@ releases = {
     'trixie'   : ('Debian',  '13.0', KEYRING, False),
     }
 
-# end-of-life releases move off the regular mirrors; others use debootstrap's
-# default, which picks the right mirror for the architecture
+# supported releases, with Ubuntu's other architectures on ports
+default_mirrors = {
+    'ubuntu' : 'http://archive.ubuntu.com/ubuntu',
+    'debian' : 'http://deb.debian.org/debian',
+    }
+ubuntu_ports = 'http://ports.ubuntu.com/ubuntu-ports'
+
+distro_components = {
+    'ubuntu' : ['main', 'restricted', 'universe', 'multiverse'],
+    'debian' : ['main', 'contrib', 'non-free'],
+    }
+
+# end-of-life releases move off the regular mirrors, all architectures included
 eol_mirrors = {
     'ubuntu' : 'http://old-releases.ubuntu.com/ubuntu',
     'debian' : 'http://archive.debian.org/debian',
@@ -162,19 +175,78 @@ native_archs = {
     }
 
 
+def alternatives(entry):
+    return [a.strip() for a in entry.split('|') if a.strip()]
+
+
 def apply_packages(packages, lines):
-    # '#' and ';' start comments, '-name' removes a package added earlier
+    # '#' and ';' start comments, 'a | b' installs the first of a and b the
+    # release has, and '-name' removes every entry naming that package
     for line in lines:
-        name = re.split('[#;]', line, 1)[0].strip()
-        if not name:
+        entry = re.split('[#;]', line, 1)[0].strip()
+        remove = entry.startswith('-')
+        entry = ' | '.join(alternatives(entry[1:] if remove else entry))
+        if not entry:
             continue
-        if name[0] == '-':
-            name = name[1:].strip()
-            if name in packages:
-                packages.remove(name)
-        elif name not in packages:
-            packages.append(name)
+        if remove:
+            names = set(alternatives(entry))
+            packages[:] = [p for p in packages if not names & set(alternatives(p))]
+        elif entry not in packages:
+            packages.append(entry)
     return packages
+
+
+def resolve_packages(packages, index):
+    # pick each entry's first alternative that's in the release's index
+    resolved,missing = [],[]
+    for entry in packages:
+        found = next((a for a in alternatives(entry) if a in index), None)
+        if found is None:
+            missing.append(entry)
+        elif found not in resolved:
+            resolved.append(found)
+    return resolved,missing
+
+
+def read_index(url):
+    # package names in a Packages file, or None if the mirror doesn't have it
+    for ext,decompress in (
+        ('.xz', lzma.decompress),
+        ('.gz', gzip.decompress),
+        ('.bz2', bz2.decompress),
+        ('', bytes),
+        ):
+        try:
+            data = urllib.request.urlopen(url + ext, timeout=60).read()
+        except Exception:
+            continue
+        text = decompress(data).decode('utf-8', 'replace')
+        return {l[9:].strip() for l in text.splitlines() if l.startswith('Package: ')}
+    return None
+
+
+class PackageIndex:
+    # the names a release's components provide, read one component at a time
+    # and only as far as needed to answer
+    def __init__(self, mirror, release, arch, components):
+        urls = [f'{mirror}/dists/{release}/{c}/binary-{arch}/Packages' for c in components]
+        self.names = read_index(urls[0])
+        if self.names is None:
+            raise FileNotFoundError(errno.ENOENT, f'no {components[0]} index for {release} {arch}', urls[0])
+        self.pending = urls[1:]
+
+    def __contains__(self, name):
+        while name not in self.names and self.pending:
+            self.names |= read_index(self.pending.pop(0)) or set()
+        return name in self.names
+
+
+def release_mirror(distro, eol, arch):
+    if eol:
+        return eol_mirrors[distro]
+    if distro == 'ubuntu' and arch not in ('amd64', 'i386'):
+        return ubuntu_ports
+    return default_mirrors[distro]
 
 
 def load_packages(release, overlay, quiet):
@@ -359,14 +431,18 @@ def apt_update(dest, quiet):
     return True
 
 
+def host_arch():
+    try:
+        return subprocess.run(['dpkg', '--print-architecture'],
+            capture_output=True, text=True).stdout.strip()
+    except FileNotFoundError:
+        return {q: a for a,q in qemu_names.items()}.get(os.uname().machine)
+
+
 def check_arch(arch, binfmt='/proc/sys/fs/binfmt_misc'):
     # foreign architectures run under qemu's binfmt handlers, which need the
     # F flag to keep working inside the chroot
-    try:
-        host = subprocess.run(['dpkg', '--print-architecture'],
-            capture_output=True, text=True).stdout.strip()
-    except FileNotFoundError:
-        host = {q: a for a,q in qemu_names.items()}.get(os.uname().machine)
+    host = host_arch()
     if arch == host or arch in native_archs.get(host, []):
         return True
     if arch not in qemu_names:
@@ -412,33 +488,15 @@ def build(release, mirror, arch, packages, letsencrypt, updates, quiet):
 
     distro,version,keys,eol = releases[release]
     distro = distro.lower()
-    if keys is UNSIGNED:
-        print(f'[-] no keyring verifies {release}, skipping the signature check')
-        keyring = ['--no-check-gpg']
-    else:
-        keyring_path = f'/usr/share/keyrings/{distro}-archive-{keys}.gpg'
-        if not os.path.exists(keyring_path):
-            print(f'[!] missing {keyring_path}, install {keyring_packages[distro]}')
-            return 1
-        keyring = [f'--keyring={keyring_path}']
-
-    if not mirror and eol:
-        mirror = eol_mirrors[distro]
-
-    try:
-        packages = load_packages(release, packages, quiet)
-    except FileNotFoundError as e:
-        print(f'[-] {e.strerror}: {e.filename}')
+    keyring = f'/usr/share/keyrings/{distro}-archive-{keys}.gpg'
+    if not os.path.exists(keyring):
+        print(f'[!] missing {keyring}, install {keyring_packages[distro]}')
         return 1
 
-    if letsencrypt:
-        if 'ca-certificates' not in packages:
-            packages.append('ca-certificates')
+    if not mirror:
+        mirror = release_mirror(distro, eol, arch or host_arch())
 
-    if distro == 'ubuntu':
-        components = ['main','restricted','universe','multiverse']
-    elif distro == 'debian':
-        components = ['main','contrib','non-free']
+    components = distro_components[distro]
 
     name = f'debocker-{release}'
     tag  = f'debocker:{release}'
@@ -465,15 +523,29 @@ def build(release, mirror, arch, packages, letsencrypt, updates, quiet):
             print(f'[+] removing incomplete build: {partial}')
             shutil.rmtree(partial)
 
+        try:
+            packages = load_packages(release, packages, quiet)
+            if not quiet:
+                print(f'[+] reading the package index from {mirror}')
+            index = PackageIndex(mirror, release, arch or host_arch(), components)
+        except FileNotFoundError as e:
+            print(f'[!] {e.strerror}: {e.filename}')
+            return 1
+
+        if letsencrypt:
+            packages.append('ca-certificates')
+        packages,missing = resolve_packages(packages, index)
+        if missing:
+            print(f'[!] {release} has none of: {", ".join(missing)}')
+            return 1
+
         cmd = ['debootstrap']
         if arch:
             cmd.append(f'--arch={arch}')
         cmd.append(f'--components={",".join(components)}')
         cmd.append('--include=' + ','.join(packages))
-        cmd.extend(keyring)
-        cmd.extend([release, partial])
-        if mirror:
-            cmd.append(mirror)
+        cmd.append(f'--keyring={keyring}')
+        cmd.extend([release, partial, mirror])
 
         print('[+]', shlex.join(cmd))
         if not quiet:
@@ -554,7 +626,7 @@ def main():
 
     argparser.add_argument('mirror',
         nargs='?', default='',
-        help='mirror to download from (default: debootstrap\'s, or the'
+        help='mirror to download from (default: the distribution\'s, or its'
              ' archive mirror for end-of-life releases)'
         )
 

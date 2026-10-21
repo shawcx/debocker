@@ -14,6 +14,10 @@ debocker (0.6) unstable; urgency=medium
     and check the qemu binfmt handler before foreign-architecture builds.
   * Allow unauthenticated packages in images whose archive keys have expired,
     and mount /dev/pts for the upgrade.
+  * Package lists accept alternatives ('a | b'), resolved against the
+    release's package index before debootstrap. Fix the default list for
+    noble, trixie and later and for woody and sarge.
+  * Drop potato (Debian 2.2).
   * Leave apt's package lists and the host's resolv.conf and hostname out
     of the image.
   * Add tests, run them during the package build, add a release table

@@ -1,4 +1,7 @@
 import os
+import bz2
+import gzip
+import lzma
 import tarfile
 import subprocess
 import importlib.resources
@@ -33,6 +36,83 @@ def test_apply_packages_removal_and_duplicates():
 
 def test_apply_packages_readd_after_removal():
     assert debocker.apply_packages(['a', 'b'], ['-a', 'a']) == ['b', 'a']
+
+
+def test_apply_packages_alternatives():
+    lines = ['libelf1t64 |libelf1| libelfg0', 'a|b', 'a | b', 'c | # trailing']
+    assert debocker.apply_packages([], lines) == ['libelf1t64 | libelf1 | libelfg0', 'a | b', 'c']
+
+
+def test_apply_packages_remove_alternative():
+    packages = debocker.apply_packages([], ['openssh-client | ssh', 'libelf1t64 | libelf1', 'wget'])
+    assert debocker.apply_packages(list(packages), ['-ssh']) == ['libelf1t64 | libelf1', 'wget']
+    assert debocker.apply_packages(list(packages), ['-libelf1 | wget']) == ['openssh-client | ssh']
+
+
+def test_resolve_packages():
+    index = {'libelf1', 'libncurses5-dev', 'wget', 'ssh'}
+    packages = ['libelf1t64 | libelf1', 'libncurses-dev | libncurses5-dev', 'wget',
+                'openssh-client | ssh', 'ssh', 'pkg-config', 'nope | none']
+    assert debocker.resolve_packages(packages, index) == (
+        ['libelf1', 'libncurses5-dev', 'wget', 'ssh'], ['pkg-config', 'nope | none'])
+
+
+def test_bundled_default_resolves_on_new_and_old_names():
+    packages = debocker.apply_packages([], bundled('packages.default').read_text().splitlines())
+    noble = {'libelf1t64', 'libncurses-dev', 'openssh-client'}
+    woody = {'libelfg0', 'libncurses5-dev', 'ssh'}
+    for names in (noble, woody):
+        index = names | {p for p in packages if '|' not in p}
+        resolved,missing = debocker.resolve_packages(packages, index)
+        assert not missing
+        assert names <= set(resolved)
+
+
+def write_index(path, names, compress):
+    text = ''.join(f'Package: {n}\nVersion: 1\n\n' for n in names).encode()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.with_name(path.name + compress[0]).write_bytes(compress[1](text))
+
+
+@pytest.mark.parametrize('compress', [('.xz', lzma.compress), ('.gz', gzip.compress), ('.bz2', bz2.compress), ('', bytes)])
+def test_read_index(tmp_path, compress):
+    write_index(tmp_path / 'Packages', ['a', 'b'], compress)
+    assert debocker.read_index((tmp_path / 'Packages').as_uri()) == {'a', 'b'}
+    assert debocker.read_index((tmp_path / 'Missing').as_uri()) is None
+
+
+def test_package_index_reads_components_lazily(tmp_path, monkeypatch):
+    mirror = tmp_path / 'mirror'
+    dists = mirror / 'dists' / 'hardy'
+    write_index(dists / 'main' / 'binary-amd64' / 'Packages', ['libelfg0', 'wget'], ('.gz', gzip.compress))
+    write_index(dists / 'universe' / 'binary-amd64' / 'Packages', ['libelf1'], ('.gz', gzip.compress))
+    read = []
+    real_read = debocker.read_index
+    monkeypatch.setattr(debocker, 'read_index', lambda url: read.append(url.split('/')[-3]) or real_read(url))
+
+    index = debocker.PackageIndex(mirror.as_uri(), 'hardy', 'amd64', ['main', 'restricted', 'universe', 'multiverse'])
+    assert 'wget' in index
+    assert read == ['main']
+    # a later component's name is still preferred over an earlier alternative
+    assert debocker.resolve_packages(['libelf1 | libelfg0'], index) == (['libelf1'], [])
+    assert read == ['main', 'restricted', 'universe']
+    assert 'nope' not in index
+    assert read == ['main', 'restricted', 'universe', 'multiverse']
+
+
+def test_package_index_needs_first_component(tmp_path):
+    with pytest.raises(FileNotFoundError) as e:
+        debocker.PackageIndex(tmp_path.as_uri(), 'hardy', 'arm64', ['main'])
+    assert e.value.strerror == 'no main index for hardy arm64'
+    assert e.value.filename.endswith('/dists/hardy/main/binary-arm64/Packages')
+
+
+def test_release_mirror():
+    assert debocker.release_mirror('ubuntu', False, 'amd64') == 'http://archive.ubuntu.com/ubuntu'
+    assert debocker.release_mirror('ubuntu', False, 'arm64') == 'http://ports.ubuntu.com/ubuntu-ports'
+    assert debocker.release_mirror('ubuntu', True, 'arm64') == 'http://old-releases.ubuntu.com/ubuntu'
+    assert debocker.release_mirror('debian', False, 'arm64') == 'http://deb.debian.org/debian'
+    assert debocker.release_mirror('debian', True, 'i386') == 'http://archive.debian.org/debian'
 
 
 def test_load_packages_bundled_default(workdir):
@@ -78,7 +158,7 @@ def test_releases_table():
     for release,(distro,version,keys,eol) in debocker.releases.items():
         assert distro.lower() in debocker.eol_mirrors, release
         assert distro.lower() in debocker.keyring_packages, release
-        assert keys in (debocker.KEYRING, debocker.REMOVED, debocker.UNSIGNED), release
+        assert keys in (debocker.KEYRING, debocker.REMOVED), release
         assert isinstance(eol, bool), release
         assert (distro, version) not in versions, release
         versions.add((distro, version))
