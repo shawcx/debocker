@@ -1,0 +1,6 @@
+debocker (0.6) unstable; urgency=medium
+
+  * Build with pyproject.toml and package for Debian.
+  * Layered package lists with exclusions.
+
+ -- Matthew Shaw <mshaw.cx@gmail.com>  Tue, 20 Oct 2026 23:48:56 -0400

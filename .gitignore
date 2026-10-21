@@ -1,8 +1,15 @@
 /debocker-*
+/envs
 /packages.*
 /build
 /dist
-/deb_dist
 /*.egg-info
-/envs
 __pycache__/
+/debian/debocker/
+/debian/.debhelper/
+/debian/files
+/debian/*.substvars
+/debian/*.debhelper
+/debian/*.debhelper.log
+/debian/debhelper-build-stamp
+/.pybuild/

@@ -1,0 +1,7 @@
+#!/usr/bin/make -f
+
+export PYBUILD_NAME = debocker
+export PYBUILD_DISABLE = test
+
+%:
+	dh $@ --buildsystem=pybuild

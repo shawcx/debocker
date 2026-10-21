@@ -8,14 +8,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Commands
 
-There are no tests, linter config, or build steps beyond packaging.
+There are no tests or linter config.
 
 ```sh
 python3 -m debocker ?                        # list known releases (any unknown name prints the list)
 sudo python3 -m debocker xenial [mirror]
 sudo python3 -m debocker -a armhf bionic     # non-native arch via qemu-debootstrap
 pip install .                                # install the `debocker` entry point
+make wheel                                   # dist/debocker-<ver>-py3-none-any.whl
+make deb                                     # dist/debocker_<ver>_all.deb (needs pybuild-plugin-pyproject)
 ```
+
+Packaging: `pyproject.toml` (setuptools) defines the `debocker` script and bundles `debocker/packages.default`. `debian/` is a native (`3.0 (native)`) dh + pybuild package that installs `/usr/bin/debocker`. To release, bump the version in both `debocker/__init__.py` (`__version__`, which pyproject reads) and `debian/changelog`.
 
 Host prerequisites: root, `debootstrap` (plus `qemu-debootstrap`/qemu-user-static for `--arch`), Docker, and `debian-keyring debian-archive-keyring` (and Ubuntu's keyring) for the archive keys.
 

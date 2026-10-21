@@ -23,6 +23,8 @@
 # SOFTWARE.
 #
 
+__version__ = '0.6'
+
 import sys
 import os
 import argparse
@@ -225,6 +227,10 @@ def main():
         prog='debocker',
         description='Build docker images of old Ubuntu and Debian releases',
         epilog='hello'
+        )
+
+    argparser.add_argument('--version', '-V',
+        action='version', version=f'%(prog)s {__version__}'
         )
 
     argparser.add_argument('--arch', '-a',

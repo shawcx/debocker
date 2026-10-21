@@ -3,11 +3,23 @@ debocker
 
 Build docker images of old Ubuntu and Debian releases
 
-# Dependencies
+# Installing
 
-## Ubuntu
+Build and install the Debian package (needs `pybuild-plugin-pyproject`):
 
-`apt install debian-keyring debian-archive-keyring`
+    make deb
+    sudo apt install ./dist/debocker_*_all.deb
+
+The package pulls in debootstrap, the archive keyrings and Docker. Install `qemu-user-static` to build other architectures.
+
+Or install with pip (`pip install .`), and install the dependencies yourself:
+
+    sudo apt install debootstrap debian-archive-keyring ubuntu-keyring docker.io
+
+# Usage
+
+    sudo debocker <release> [mirror]
+    debocker ?            # list releases
 
 # Configuring
 

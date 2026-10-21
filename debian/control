@@ -1,0 +1,27 @@
+Source: debocker
+Section: admin
+Priority: optional
+Maintainer: Matthew Shaw <mshaw.cx@gmail.com>
+Build-Depends: debhelper-compat (= 13),
+               dh-sequence-python3,
+               pybuild-plugin-pyproject,
+               python3-all,
+               python3-setuptools
+Standards-Version: 4.6.2
+Homepage: https://github.com/shawcx/debocker
+Rules-Requires-Root: no
+
+Package: debocker
+Architecture: all
+Depends: ${misc:Depends},
+         ${python3:Depends},
+         debian-archive-keyring,
+         debootstrap,
+         docker.io | docker-ce,
+         ubuntu-keyring
+Recommends: qemu-user-static
+Description: build Docker images of old Ubuntu and Debian releases
+ debocker runs debootstrap for an Ubuntu or Debian release, including
+ end-of-life releases signed with removed archive keys, and imports the
+ resulting root filesystem as a Docker image. qemu-user-static is needed
+ to build images for a foreign architecture.
