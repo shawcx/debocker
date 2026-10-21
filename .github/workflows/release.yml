@@ -1,0 +1,33 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential debhelper dh-python pybuild-plugin-pyproject \
+            python3-all python3-setuptools python3-pytest python3-pip help2man lintian
+      - name: Check the tag matches the version
+        run: |
+          deb=$(dpkg-parsechangelog -S Version)
+          py=$(python3 -c 'import debocker; print(debocker.__version__)')
+          echo "tag ${GITHUB_REF_NAME#v}, debian/changelog $deb, __version__ $py"
+          test "${GITHUB_REF_NAME#v}" = "$deb" -a "$deb" = "$py"
+      - run: make deb wheel release-notes
+      - run: lintian --fail-on warning dist/*.deb
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/*.deb dist/*.whl \
+            --title "debocker ${GITHUB_REF_NAME#v}" --notes-file dist/release-notes.md

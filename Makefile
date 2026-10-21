@@ -1,6 +1,6 @@
 VERSION := $(shell dpkg-parsechangelog -S Version)
 
-.PHONY: test check-releases wheel deb man clean
+.PHONY: test check-releases wheel deb man release-notes clean
 
 test:
 	python3 -m pytest
@@ -19,6 +19,11 @@ deb:
 man:
 	mkdir -p dist
 	PYTHONPATH=. help2man --no-info --name='build Docker images of old Ubuntu and Debian releases' --output=dist/debocker.1 'python3 -m debocker'
+
+# the latest debian/changelog entry as markdown
+release-notes:
+	mkdir -p dist
+	dpkg-parsechangelog -S Changes | sed '1,/^\.$$/d; s/^  //' > dist/release-notes.md
 
 clean:
 	rm -rf build dist *.egg-info .pytest_cache
