@@ -17,7 +17,7 @@ debocker (0.6) unstable; urgency=medium
   * Package lists accept alternatives ('a | b'), resolved against the
     release's package index before debootstrap. Fix the default list for
     noble, trixie and later and for woody and sarge.
-  * Drop potato (Debian 2.2).
+  * Drop potato (Debian 2.2) and hardy (Ubuntu 8.04).
   * Leave apt's package lists and the host's resolv.conf and hostname out
     of the image.
   * Add tests, run them during the package build, add a release table

@@ -83,14 +83,14 @@ def test_read_index(tmp_path, compress):
 
 def test_package_index_reads_components_lazily(tmp_path, monkeypatch):
     mirror = tmp_path / 'mirror'
-    dists = mirror / 'dists' / 'hardy'
+    dists = mirror / 'dists' / 'precise'
     write_index(dists / 'main' / 'binary-amd64' / 'Packages', ['libelfg0', 'wget'], ('.gz', gzip.compress))
     write_index(dists / 'universe' / 'binary-amd64' / 'Packages', ['libelf1'], ('.gz', gzip.compress))
     read = []
     real_read = debocker.read_index
     monkeypatch.setattr(debocker, 'read_index', lambda url: read.append(url.split('/')[-3]) or real_read(url))
 
-    index = debocker.PackageIndex(mirror.as_uri(), 'hardy', 'amd64', ['main', 'restricted', 'universe', 'multiverse'])
+    index = debocker.PackageIndex(mirror.as_uri(), 'precise', 'amd64', ['main', 'restricted', 'universe', 'multiverse'])
     assert 'wget' in index
     assert read == ['main']
     # a later component's name is still preferred over an earlier alternative
@@ -102,9 +102,9 @@ def test_package_index_reads_components_lazily(tmp_path, monkeypatch):
 
 def test_package_index_needs_first_component(tmp_path):
     with pytest.raises(FileNotFoundError) as e:
-        debocker.PackageIndex(tmp_path.as_uri(), 'hardy', 'arm64', ['main'])
-    assert e.value.strerror == 'no main index for hardy arm64'
-    assert e.value.filename.endswith('/dists/hardy/main/binary-arm64/Packages')
+        debocker.PackageIndex(tmp_path.as_uri(), 'precise', 'arm64', ['main'])
+    assert e.value.strerror == 'no main index for precise arm64'
+    assert e.value.filename.endswith('/dists/precise/main/binary-arm64/Packages')
 
 
 def test_release_mirror():
@@ -456,7 +456,7 @@ def test_main_lists_releases(capsys, monkeypatch):
     assert debocker.main() == 0
     out = capsys.readouterr().out.splitlines()
     assert len(out) == len(debocker.releases)
-    assert out[0].startswith('hardy')
+    assert out[0].startswith('intrepid')
 
 
 def test_main_unknown_release(capsys, monkeypatch):

@@ -46,7 +46,6 @@ REMOVED = 'removed-keys'
 releases = {
     # name        distro     version  keys      eol
     # Ubuntu
-    'hardy'    : ('Ubuntu',  '8.04', REMOVED,  True),
     'intrepid' : ('Ubuntu',  '8.10', REMOVED,  True),
     'jaunty'   : ('Ubuntu',  '9.04', REMOVED,  True),
     'karmic'   : ('Ubuntu',  '9.10', REMOVED,  True),
