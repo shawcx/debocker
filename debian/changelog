@@ -2,5 +2,19 @@ debocker (0.6) unstable; urgency=medium
 
   * Build with pyproject.toml and package for Debian.
   * Layered package lists with exclusions.
+  * Fix Let's Encrypt roots never reaching the CA store; bundle ISRG Root
+    X1, X2, YR and YE and disable the expired DST Root CA X3.
+  * Use the archive mirrors for end-of-life releases and correct which
+    keyring verifies each release; add oracular, plucky, questing,
+    resolute and trixie.
+  * Run commands with subprocess, exit non-zero on failure, use debootstrap
+    instead of qemu-debootstrap, and give images a default CMD.
+  * Add the -updates and security suites and upgrade to them (--no-updates
+    to skip), build in a .partial directory so failed builds aren't reused,
+    and check the qemu binfmt handler before foreign-architecture builds.
+  * Leave apt's package lists and the host's resolv.conf and hostname out
+    of the image.
+  * Add tests, run them during the package build, add a release table
+    checker, and generate a man page with help2man.
 
  -- Matthew Shaw <mshaw.cx@gmail.com>  Tue, 20 Oct 2026 23:48:56 -0400

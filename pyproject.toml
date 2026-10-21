@@ -28,7 +28,10 @@ debocker = "debocker:main"
 packages = ["debocker"]
 
 [tool.setuptools.package-data]
-debocker = ["packages.default"]
+debocker = ["packages.default", "certs/*.crt"]
 
 [tool.setuptools.dynamic]
 version = {attr = "debocker.__version__"}
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

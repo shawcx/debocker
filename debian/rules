@@ -1,7 +1,13 @@
 #!/usr/bin/make -f
 
 export PYBUILD_NAME = debocker
-export PYBUILD_DISABLE = test
+export PYBUILD_TEST_PYTEST = 1
+export PYBUILD_TEST_ARGS = {dir}/tests
 
 %:
 	dh $@ --buildsystem=pybuild
+
+execute_after_dh_auto_build:
+	PYTHONPATH=. help2man --no-info \
+		--name='build Docker images of old Ubuntu and Debian releases' \
+		--output=debian/debocker.1 'python3 -m debocker'

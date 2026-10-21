@@ -13,3 +13,5 @@ __pycache__/
 /debian/*.debhelper.log
 /debian/debhelper-build-stamp
 /.pybuild/
+/debian/debocker.1
+/.pytest_cache/
